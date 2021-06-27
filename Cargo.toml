@@ -1,0 +1,39 @@
+[package]
+name = "rust-getting-started"
+version = "0.1.0"
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde_derive = "^1.0.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+tokio = { version = "1", features = ["full"] }
+warp = "0.3"
+reqwest = { version = "0.11.4", features = ["json"] }
+
+parking_lot = "0.10.0"
+
+futures = "0.3"
+
+deadpool-postgres = { version = "0.9" }
+tokio-postgres = { version = "0.7", features = ["with-uuid-0_8"] }
+
+log4rs = { version = "1.0.0", features = ["json_encoder"] }
+log = "0.4.14"
+
+config = "0.11.0"
+
+log-mdc = "0.1.0"
+
+prometheus = "0.12.0"
+lazy_static = "1.4.0"
+
+url = "2.2.2"
+
+# for json log encoder
+chrono = "0.4.0"
+anyhow = "1.0.41"
+thread-id = "4.0.0"

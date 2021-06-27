@@ -1,0 +1,6 @@
+[database]
+url = "postgresql://localhost/create_drop?sslmode=verify-ca"
+username = ""
+password = ""
+port = 5432
+

@@ -1,5 +1,5 @@
 [package]
-name = "rust-getting-started"
+name = "proper-rust"
 version = "0.1.0"
 edition = "2018"
 
@@ -32,6 +32,8 @@ prometheus = "0.12.0"
 lazy_static = "1.4.0"
 
 url = "2.2.2"
+
+uuid = { version = "0.8.2", features = ["serde", "v4"] }
 
 # for json log encoder
 chrono = "0.4.0"

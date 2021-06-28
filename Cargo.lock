@@ -1104,6 +1104,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "proper-rust"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "config",
+ "deadpool-postgres",
+ "futures",
+ "lazy_static",
+ "log",
+ "log-mdc",
+ "log4rs",
+ "parking_lot 0.10.2",
+ "prometheus",
+ "reqwest",
+ "serde 1.0.126",
+ "serde_derive",
+ "serde_json",
+ "thread-id 4.0.0",
+ "tokio",
+ "tokio-postgres",
+ "url",
+ "uuid",
+ "warp",
+]
+
+[[package]]
 name = "protobuf"
 version = "2.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1279,32 +1306,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "web-sys",
  "winreg",
-]
-
-[[package]]
-name = "rust-getting-started"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "config",
- "deadpool-postgres",
- "futures",
- "lazy_static",
- "log",
- "log-mdc",
- "log4rs",
- "parking_lot 0.10.2",
- "prometheus",
- "reqwest",
- "serde 1.0.126",
- "serde_derive",
- "serde_json",
- "thread-id 4.0.0",
- "tokio",
- "tokio-postgres",
- "url",
- "warp",
 ]
 
 [[package]]
@@ -1888,6 +1889,10 @@ name = "uuid"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
+dependencies = [
+ "getrandom 0.2.3",
+ "serde 1.0.126",
+]
 
 [[package]]
 name = "vcpkg"

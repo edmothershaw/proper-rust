@@ -1,4 +1,5 @@
 pub use proper_rust::start_server;
+pub use proper_rust::setup;
 
 mod proper_rust;
 pub mod monitoring;

@@ -1,4 +1,5 @@
 use std::{fmt, option, thread};
+use std::convert::Infallible;
 
 use chrono::{
     DateTime,
@@ -9,10 +10,34 @@ use log4rs::config::{Deserialize, Deserializers};
 use log4rs::encode::{Encode, Write};
 use log::Level;
 use serde::ser::{self, Serialize, SerializeMap};
+use uuid::Uuid;
+use warp::Filter;
+use warp::http::HeaderMap;
 
 #[derive(Clone)]
 pub struct FlowContext {
     pub flow_id: String,
+}
+
+impl FlowContext {
+    pub fn new(flow_id_opt: Option<String>) -> FlowContext {
+        let flow_id = flow_id_opt.unwrap_or_else(|| { Uuid::new_v4().to_string() });
+        FlowContext {
+            flow_id
+        }
+    }
+
+    pub fn extract_flow_context() -> impl Filter<Extract=(FlowContext, ), Error=Infallible> + Copy {
+        warp::header::headers_cloned().map(move |headers: HeaderMap| {
+            let flow_id_opt = headers.get("flow-id").map(|v| {
+                match v.to_str() {
+                    Ok(s) => Some(s.to_string()),
+                    Err(_) => None,
+                }
+            }).flatten();
+            FlowContext::new(flow_id_opt)
+        })
+    }
 }
 
 pub struct FlowLogger {

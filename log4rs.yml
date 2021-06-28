@@ -12,5 +12,5 @@ root:
   - stdout
 
 loggers:
-  app::backend::db:
+  app::backend:
     level: info

@@ -2,23 +2,24 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use deadpool_postgres::Pool;
-use log::info;
+use lazy_static::lazy_static;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 use warp::{Filter, http};
 
-use proper_rust::database::create_pool;
-use proper_rust::flow_logger::init_logging;
+use proper_rust::flow_logger::{FlowContext, FlowLogger};
 use proper_rust::monitoring::timed;
-use proper_rust::settings::load_config;
 
-use crate::proper_rust::settings::{Settings};
 use crate::api::Chuck;
 
 mod api;
 mod proper_rust;
 
 type Items = HashMap<String, i32>;
+
+lazy_static! {
+    static ref LOG: FlowLogger = FlowLogger::new("app::backend");
+}
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 struct Item {
@@ -43,6 +44,7 @@ impl Store {
 async fn add_grocery_list_item(
     item: Item,
     store: Store,
+    _fc: FlowContext,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     store.grocery_list.write().insert(item.name, item.quantity);
 
@@ -59,7 +61,8 @@ fn json_body() -> impl Filter<Extract=(Item, ), Error=warp::Rejection> + Clone {
 }
 
 async fn get_grocery_list(
-    store: Store
+    store: Store,
+    fc: FlowContext,
 ) -> Result<impl warp::Reply, warp::Rejection> {
     timed("get_grocery_list", || {
         async {
@@ -70,7 +73,7 @@ async fn get_grocery_list(
                 result.insert(key, value);
             }
 
-            info!(target: "app::backend::db", "Fetched grocery list");
+            LOG.info(&fc, "Fetched grocery list");
 
             Ok(warp::reply::json(
                 &result
@@ -80,9 +83,11 @@ async fn get_grocery_list(
 }
 
 
-async fn chuck(pool: Pool) -> Result<impl warp::Reply, warp::Rejection> {
+async fn chuck(pool: Pool, fc: FlowContext) -> Result<impl warp::Reply, warp::Rejection> {
     timed("chuck", || {
         async {
+            LOG.info(&fc, "making api call");
+
             let res = api::make_call().await;
 
             let res2 = match res {
@@ -101,12 +106,13 @@ async fn chuck(pool: Pool) -> Result<impl warp::Reply, warp::Rejection> {
 
 
 async fn db_run(pool: &Pool) {
+    let fc = FlowContext { flow_id: "db-flow".to_string() };
     for i in 1..10 {
         let client = pool.get().await.unwrap();
         let stmt = client.prepare_cached("SELECT 1 + $1").await.unwrap();
         let rows = client.query(&stmt, &[&i]).await.unwrap();
         let value: i32 = rows[0].get(0);
-        info!(target: "app::backend::db", "{}", value);
+        LOG.info(&fc, value.to_string().as_str());
         assert_eq!(value, i + 1);
     }
 }
@@ -117,24 +123,9 @@ async fn write_chuck(pool: Pool, chuck: &Chuck) {
     let _rows = client.query(&stmt, &[&chuck.value]).await.unwrap();
 }
 
-fn setup() -> (Settings, Option<Pool>) {
-    init_logging("log4rs.yml");
-
-    let config = load_config();
-
-    let pool_opt = if config.database.enabled {
-        let pool = create_pool(&config);
-        Some(pool)
-    } else {
-        None
-    };
-
-    (config, pool_opt)
-}
-
 #[tokio::main]
 async fn main() {
-    let (_config, pool_opt) = setup();
+    let (_config, pool_opt) = proper_rust::setup();
     let pool = pool_opt.unwrap();
 
     db_run(&pool).await;
@@ -154,6 +145,7 @@ async fn main() {
         .and(warp::path::end())
         .and(json_body())
         .and(store_filter.clone())
+        .and(FlowContext::extract_flow_context())
         .and_then(add_grocery_list_item);
 
     let get_items = warp::get()
@@ -161,6 +153,7 @@ async fn main() {
         .and(warp::path("groceries"))
         .and(warp::path::end())
         .and(store_filter.clone())
+        .and(FlowContext::extract_flow_context())
         .and_then(get_grocery_list);
 
     let chuck = warp::get()
@@ -168,6 +161,7 @@ async fn main() {
         .and(warp::path("chuck"))
         .and(warp::path::end())
         .and(pool_filter.clone())
+        .and(FlowContext::extract_flow_context())
         .and_then(chuck);
 
     let routes = add_items.or(get_items).or(chuck);

@@ -16,9 +16,6 @@ pub async fn make_call() -> Result<Chuck, Error> {
     let client3 = client2.build().unwrap();
     let res = client3.get("https://api.chucknorris.io/jokes/random").send().await?;
     println!("Status: {}", res.status());
-    println!("Headers:\n{:#?}", res.headers());
-
     let body: Chuck = res.json().await?;
-    println!("Body:\n{}", body.value);
     Ok(body)
 }

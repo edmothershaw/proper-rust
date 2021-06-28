@@ -30,13 +30,14 @@ lazy_static! {
     static ref COUNTERS: MetricStore = MetricStore::new();
 }
 
-fn inc_metric(metric_name: &str, success: bool, value: f64) {
-    let key = format!("{}_{}", metric_name, success);
+fn inc_metric(metric_name: &str, value: f64, success: bool, error_type: &str) {
+    let key = format!("{}_{}_{}", metric_name, success, error_type);
     if !COUNTERS.counters.read().contains_key(key.as_str()) {
         let counter_opts = Opts::new(metric_name, metric_name.to_string() + " help");
         let mut labels = HashMap::new();
         let outcome = if success { "success" } else { "error" };
         labels.insert("outcome".to_string(), outcome.to_string());
+        labels.insert("error_type".to_string(), error_type.to_string());
         let with_labels = counter_opts.const_labels(labels);
         let counter = Counter::with_opts(with_labels).unwrap();
         COUNTERS.registry.read().register(Box::new(counter.clone())).unwrap();
@@ -46,8 +47,14 @@ fn inc_metric(metric_name: &str, success: bool, value: f64) {
     COUNTERS.counters.read().get(key.as_str()).unwrap().inc_by(value);
 }
 
+pub trait ErrorTagger {
+    fn error_tag(&self) -> String;
+}
+
 pub async fn timed<F, T, E>(name: &str, f: impl FnOnce() -> F) -> Result<T, E>
-    where F: Future<Output=Result<T, E>>,
+    where
+        F: Future<Output=Result<T, E>>,
+        E: ErrorTagger,
 {
     let start = SystemTime::now();
     let res = f().await;
@@ -55,12 +62,16 @@ pub async fn timed<F, T, E>(name: &str, f: impl FnOnce() -> F) -> Result<T, E>
 
     match res {
         Ok(t) => {
-            inc_metric(format!("{}_total", name).as_str(), true, 1.0);
-            inc_metric(format!("{}_time_seconds", name).as_str(), true, duration.as_secs_f64());
+            inc_metric(format!("{}_total", name).as_str(), 1.0, true, "no-error");
+            inc_metric(format!("{}_time_seconds_count", name).as_str(), 1.0, true, "no-error");
+            inc_metric(format!("{}_time_seconds", name).as_str(), duration.as_secs_f64(), true, "no-error");
             Ok(t)
         }
         Err(e) => {
-            inc_metric(format!("{}_total", name).as_str(), false, 1.0);
+            let tag = e.error_tag();
+            inc_metric(format!("{}_total", name).as_str(), 1.0, false, tag.as_str());
+            inc_metric(format!("{}_time_seconds_count", name).as_str(), 1.0, false, tag.as_str());
+            inc_metric(format!("{}_time_seconds", name).as_str(), duration.as_secs_f64(), false, tag.as_str());
             Err(e)
         }
     }

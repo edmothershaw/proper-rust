@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use warp::{Filter, http};
 
 use proper_rust::flow_logger::{FlowContext, FlowLogger};
-use proper_rust::monitoring::timed;
+use proper_rust::monitoring::{timed, ErrorTagger};
 
 use crate::api::Chuck;
 
@@ -82,6 +82,13 @@ async fn get_grocery_list(
     }).await
 }
 
+impl ErrorTagger for warp::Rejection {
+    fn error_tag(&self) -> String {
+        match self {
+            _ => "rejection".to_string()
+        }
+    }
+}
 
 async fn chuck(pool: Pool, fc: FlowContext) -> Result<impl warp::Reply, warp::Rejection> {
     timed("chuck", || {
@@ -106,7 +113,7 @@ async fn chuck(pool: Pool, fc: FlowContext) -> Result<impl warp::Reply, warp::Re
 
 
 async fn db_run(pool: &Pool) {
-    let fc = FlowContext { flow_id: "db-flow".to_string() };
+    let fc = FlowContext::new("db-flow");
     for i in 1..10 {
         let client = pool.get().await.unwrap();
         let stmt = client.prepare_cached("SELECT 1 + $1").await.unwrap();

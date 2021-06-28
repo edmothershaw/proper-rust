@@ -11,3 +11,8 @@ port = 1234
 
 [api]
 http-port = 8080
+
+[service]
+name = ""
+build-time = ""
+version = ""

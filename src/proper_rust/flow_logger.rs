@@ -19,12 +19,32 @@ pub struct FlowContext {
     pub flow_id: String,
 }
 
-impl FlowContext {
-    pub fn new(flow_id_opt: Option<String>) -> FlowContext {
-        let flow_id = flow_id_opt.unwrap_or_else(|| { Uuid::new_v4().to_string() });
+pub trait FromFlowContext {
+    fn from(self) -> FlowContext;
+}
+
+impl FromFlowContext for Option<String> {
+    fn from(self) -> FlowContext {
+        let flow_id = self.unwrap_or_else(|| { Uuid::new_v4().to_string() });
         FlowContext {
             flow_id
         }
+    }
+}
+
+impl FromFlowContext for &str {
+    fn from(self) -> FlowContext {
+        FlowContext {
+            flow_id: self.to_string()
+        }
+    }
+}
+
+impl FlowContext {
+    pub fn new<A>(args: A) -> FlowContext
+        where A: FromFlowContext
+    {
+        args.from()
     }
 
     pub fn extract_flow_context() -> impl Filter<Extract=(FlowContext, ), Error=Infallible> + Copy {

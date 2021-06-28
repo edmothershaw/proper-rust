@@ -2,20 +2,18 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use deadpool_postgres::Pool;
-use log4rs;
 use log::info;
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use warp::{Filter, http, Rejection, Reply};
+use warp::{Filter, http};
 
 use proper_rust::database::create_pool;
-use proper_rust::flow_logger::FlowContext;
-use proper_rust::flow_logger::FlowLogger;
+use proper_rust::flow_logger::init_logging;
 use proper_rust::monitoring::timed;
-use proper_rust::settings;
+use proper_rust::settings::load_config;
 
-use crate::proper_rust::flow_logger::init_logging;
-use crate::proper_rust::settings::load_config;
+use crate::proper_rust::settings::{Settings};
+use crate::api::Chuck;
 
 mod api;
 mod proper_rust;
@@ -63,8 +61,8 @@ fn json_body() -> impl Filter<Extract=(Item, ), Error=warp::Rejection> + Clone {
 async fn get_grocery_list(
     store: Store
 ) -> Result<impl warp::Reply, warp::Rejection> {
-    timed("get_grocery_list", &{
-        || {
+    timed("get_grocery_list", || {
+        async {
             let mut result = HashMap::new();
             let r = store.grocery_list.read();
 
@@ -78,25 +76,31 @@ async fn get_grocery_list(
                 &result
             ))
         }
-    })
+    }).await
 }
 
 
-async fn chuck() -> Result<impl warp::Reply, warp::Rejection> {
-    let res = api::make_call().await;
+async fn chuck(pool: Pool) -> Result<impl warp::Reply, warp::Rejection> {
+    timed("chuck", || {
+        async {
+            let res = api::make_call().await;
 
-    let res2 = match res {
-        Ok(a) => Ok(a),
-        Err(e) => Err(warp::reject()),
-    }?;
+            let res2 = match res {
+                Ok(a) => Ok(a),
+                Err(_) => Err(warp::reject()),
+            }?;
 
-    Ok(warp::reply::json(
-        &res2
-    ))
+            write_chuck(pool, &res2).await;
+
+            Ok(warp::reply::json(
+                &res2
+            ))
+        }
+    }).await
 }
 
 
-async fn db_run(pool: Pool) {
+async fn db_run(pool: &Pool) {
     for i in 1..10 {
         let client = pool.get().await.unwrap();
         let stmt = client.prepare_cached("SELECT 1 + $1").await.unwrap();
@@ -107,19 +111,41 @@ async fn db_run(pool: Pool) {
     }
 }
 
-#[tokio::main]
-async fn main() {
+async fn write_chuck(pool: Pool, chuck: &Chuck) {
+    let client = pool.get().await.unwrap();
+    let stmt = client.prepare_cached("INSERT INTO rust_test.chuck(value) VALUES ($1)").await.unwrap();
+    let _rows = client.query(&stmt, &[&chuck.value]).await.unwrap();
+}
+
+fn setup() -> (Settings, Option<Pool>) {
     init_logging("log4rs.yml");
 
     let config = load_config();
 
-    let pool = create_pool(config);
+    let pool_opt = if config.database.enabled {
+        let pool = create_pool(&config);
+        Some(pool)
+    } else {
+        None
+    };
 
-    db_run(pool).await;
+    (config, pool_opt)
+}
+
+#[tokio::main]
+async fn main() {
+    let (_config, pool_opt) = setup();
+    let pool = pool_opt.unwrap();
+
+    db_run(&pool).await;
 
     let store = Store::new();
     let store_filter = warp::any().map(move || {
         store.clone()
+    });
+
+    let pool_filter = warp::any().map(move || {
+        pool.clone()
     });
 
     let add_items = warp::post()
@@ -141,6 +167,7 @@ async fn main() {
         .and(warp::path("v1"))
         .and(warp::path("chuck"))
         .and(warp::path::end())
+        .and(pool_filter.clone())
         .and_then(chuck);
 
     let routes = add_items.or(get_items).or(chuck);

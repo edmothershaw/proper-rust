@@ -1,15 +1,5 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use deadpool_postgres::{Config, Manager, ManagerConfig, Pool, RecyclingMethod};
 use futures::join;
-use log::{error, info, Record};
-use log4rs;
-use log_mdc;
-use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
-use tokio_postgres::NoTls;
-use warp::{Filter, http, Reply};
+use warp::{Filter, Reply};
 
 use crate::proper_rust::monitoring;
 

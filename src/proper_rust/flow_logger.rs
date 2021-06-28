@@ -6,7 +6,6 @@ use chrono::{
 };
 use log::{error, info, Record};
 use log4rs::config::{Deserialize, Deserializers};
-use log4rs::encode;
 use log4rs::encode::{Encode, Write};
 use log::Level;
 use serde::ser::{self, Serialize, SerializeMap};
@@ -54,15 +53,6 @@ pub struct JsonEncoderConfig {
 pub struct JsonEncoder(());
 
 impl JsonEncoder {
-    /// Returns a new `JsonEncoder` with a default configuration.
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-const NEWLINE: &str = "\n";
-
-impl JsonEncoder {
     fn encode_inner(
         &self,
         w: &mut dyn Write,
@@ -70,7 +60,6 @@ impl JsonEncoder {
         record: &Record,
     ) -> anyhow::Result<()> {
         let thread = thread::current();
-        let mdc = Mdc;
         let flow_id: Option<String> = log_mdc::get("flow-id", |s_opt| {
             match s_opt {
                 Some(s) => {
@@ -89,7 +78,7 @@ impl JsonEncoder {
             flow_id: flow_id,
         };
         message.serialize(&mut serde_json::Serializer::new(&mut *w))?;
-        w.write_all(NEWLINE.as_bytes())?;
+        w.write_all("\n".as_bytes())?;
         Ok(())
     }
 }
@@ -172,7 +161,6 @@ pub fn init_logging(log_config_file: &str) {
 mod test {
     use chrono::{DateTime, Local};
     use log::{Level, Record};
-    use log4rs::*;
     use log4rs::encode::writer::simple::SimpleWriter;
 
     use crate::proper_rust::flow_logger::JsonEncoder;
@@ -192,7 +180,7 @@ mod test {
         let flow_id = "my-flow-id";
         log_mdc::insert("flow-id", flow_id);
 
-        let encoder = JsonEncoder::new();
+        let encoder = JsonEncoder::default();
 
         let mut buf = vec![];
         encoder

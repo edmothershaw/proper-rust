@@ -1,6 +1,13 @@
 [database]
+enabled = true
 url = "postgresql://localhost/create_drop?sslmode=verify-ca"
 username = ""
 password = ""
 port = 5432
 
+[monitoring]
+prefix = ""
+port = 1234
+
+[api]
+http-port = 8080

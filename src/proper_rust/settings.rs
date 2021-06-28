@@ -5,6 +5,7 @@ use crate::proper_rust::flow_logger::{FlowContext, FlowLogger};
 
 #[derive(Debug, Deserialize)]
 pub struct Database {
+    pub enabled: bool,
     pub url: String,
     pub username: String,
     pub password: String,
@@ -16,22 +17,14 @@ pub struct Settings {
     pub database: Database,
 }
 
+
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
         let mut s = Config::default();
-
-        // Start off by merging in the "default" configuration file
         s.merge(File::with_name("config/settings"))?;
-
         let environment = Environment::new();
         let res = Environment::separator(environment, "_");
         s.merge(res)?;
-
-        // Now that we're done, let's access our configuration
-        println!("debug: {:?}", s.get_bool("debug"));
-        println!("database: {:?}", s.get::<String>("database.url"));
-
-        // You can deserialize (and thus freeze) the entire configuration as
         s.try_into()
     }
 }

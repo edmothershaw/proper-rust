@@ -1,11 +1,11 @@
+use deadpool_postgres::Pool;
 use futures::join;
 use warp::{Filter, Reply};
 
-use crate::proper_rust::monitoring;
-use crate::proper_rust::flow_logger::init_logging;
-use crate::proper_rust::settings::{Settings, load_config};
-use deadpool_postgres::Pool;
 use crate::proper_rust::database::create_pool;
+use crate::proper_rust::flow_logger::init_logging;
+use crate::proper_rust::monitoring;
+use crate::proper_rust::settings::{load_config, Settings};
 
 pub async fn start_server<F>(filter: F)
     where
@@ -16,7 +16,7 @@ pub async fn start_server<F>(filter: F)
         warp::get()
             .and(warp::path("metrics"))
             .and_then(prometheus_metrics)
-    ).run(([127, 0, 0, 1], 8080));
+    ).run(([127, 0, 0, 1], 1234));
 
     let app = warp::serve(filter)
         .run(([127, 0, 0, 1], 3030));
@@ -25,12 +25,12 @@ pub async fn start_server<F>(filter: F)
 }
 
 pub fn setup() -> (Settings, Option<Pool>) {
-    init_logging("log4rs.yml");
+    let config: Settings = load_config();
 
-    let config = load_config();
+    init_logging(&config);
 
     let pool_opt = if config.database.enabled {
-        let pool = create_pool(&config);
+        let pool = create_pool(&config.database);
         Some(pool)
     } else {
         None

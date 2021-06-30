@@ -1,7 +1,6 @@
 use config::{Config, ConfigError, Environment, File};
+use log::error;
 use serde::Deserialize;
-
-use crate::proper_rust::flow_logger::{FlowContext, FlowLogger};
 
 #[derive(Debug, Deserialize)]
 pub struct Database {
@@ -12,9 +11,18 @@ pub struct Database {
     pub port: u16,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct LoggingMeta {
+    pub build_time: String,
+    pub name: String,
+    pub version: String,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     pub database: Database,
+    pub log_file: Option<String>,
+    pub service: LoggingMeta,
 }
 
 
@@ -30,22 +38,12 @@ impl Settings {
 }
 
 pub fn load_config() -> Settings {
-    let logger = FlowLogger::new("app::backend::db");
-
-    let fc = FlowContext { flow_id: "config-load".to_string() };
-
-    logger.info(&fc, "Loading configuration");
-
     let conf_result = Settings::new();
-
     match conf_result {
-        Ok(res) => {
-            logger.info(&fc, res.database.url.as_str());
-            res
-        }
+        Ok(res) => res,
         Err(err) => {
-            logger.error(&fc, err.to_string().as_str());
-            panic!("failed to config");
+            error!("{}", err);
+            panic!("failed to config")
         }
     }
 }

@@ -3,16 +3,18 @@ use std::convert::Infallible;
 
 use chrono::{
     DateTime,
-    format::{DelayedFormat, Fixed, Item}, Local,
+    format::{DelayedFormat, Fixed, Item}, Utc,
 };
 use log::{error, info, Record};
 use log4rs::config::{Deserialize, Deserializers};
 use log4rs::encode::{Encode, Write};
 use log::Level;
-use serde::ser::{self, Serialize, SerializeMap};
+use serde::ser::{self, Serialize};
 use uuid::Uuid;
 use warp::Filter;
 use warp::http::HeaderMap;
+
+use crate::proper_rust::settings::{LoggingMeta, Settings};
 
 #[derive(Clone)]
 pub struct FlowContext {
@@ -84,7 +86,6 @@ impl FlowLogger {
     }
 }
 
-//
 /// The JSON encoder's configuration
 #[derive(Clone, Eq, PartialEq, Hash, Debug, Default, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -94,25 +95,26 @@ pub struct JsonEncoderConfig {
 }
 
 /// An `Encode`r which writes a JSON object.
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
-pub struct JsonEncoder(());
+#[derive(Clone, Debug)]
+pub struct JsonEncoder {
+    logging_meta: LoggingMeta,
+}
 
 impl JsonEncoder {
+    fn new(logging_meta: LoggingMeta) -> JsonEncoder {
+        JsonEncoder { logging_meta }
+    }
+
     fn encode_inner(
         &self,
         w: &mut dyn Write,
-        time: DateTime<Local>,
+        time: DateTime<Utc>,
         record: &Record,
     ) -> anyhow::Result<()> {
         let thread = thread::current();
-        let flow_id: Option<String> = log_mdc::get("flow-id", |s_opt| {
-            match s_opt {
-                Some(s) => {
-                    Some(s.to_string())
-                }
-                None => None
-            }
-        });
+        let flow_id_opt =
+            log_mdc::get("flow-id", |s_opt| { s_opt.map(|s| { s.to_string() }) });
+
         let message = Message {
             time: time.format_with_items(Some(Item::Fixed(Fixed::RFC3339)).into_iter()),
             message: record.args(),
@@ -120,7 +122,10 @@ impl JsonEncoder {
             logger_name: record.target(),
             thread: thread.name(),
             thread_id: thread_id::get(),
-            flow_id: flow_id,
+            flow_id: flow_id_opt,
+            app: self.logging_meta.name.as_str(),
+            build_time: self.logging_meta.build_time.as_str(),
+            version: self.logging_meta.version.as_str(),
         };
         message.serialize(&mut serde_json::Serializer::new(&mut *w))?;
         w.write_all("\n".as_bytes())?;
@@ -130,7 +135,7 @@ impl JsonEncoder {
 
 impl Encode for JsonEncoder {
     fn encode(&self, w: &mut dyn Write, record: &Record) -> anyhow::Result<()> {
-        self.encode_inner(w, Local::now(), record)
+        self.encode_inner(w, Utc::now(), record)
     }
 }
 
@@ -146,6 +151,9 @@ struct Message<'a> {
     thread_id: usize,
     #[serde(rename = "flow-id", skip_serializing_if = "Option::is_none")]
     flow_id: Option<String>,
+    app: &'a str,
+    version: &'a str,
+    build_time: &'a str,
 }
 
 fn ser_display<T, S>(v: &T, s: S) -> Result<S::Ok, S::Error>
@@ -156,30 +164,16 @@ fn ser_display<T, S>(v: &T, s: S) -> Result<S::Ok, S::Error>
     s.collect_str(v)
 }
 
-struct Mdc;
-
-impl ser::Serialize for Mdc {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: ser::Serializer,
-    {
-        let mut map = serializer.serialize_map(None)?;
-
-        let mut err = Ok(());
-        log_mdc::iter(|k, v| {
-            if let Ok(()) = err {
-                err = map.serialize_key(k).and_then(|()| map.serialize_value(v));
-            }
-        });
-        err?;
-
-        map.end()
-    }
+#[derive(Clone, Debug)]
+pub struct CustomJsonEncoderDeserializer {
+    logging_meta: LoggingMeta,
 }
 
-
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
-pub struct CustomJsonEncoderDeserializer;
+impl CustomJsonEncoderDeserializer {
+    pub fn new(service_name: LoggingMeta) -> CustomJsonEncoderDeserializer {
+        CustomJsonEncoderDeserializer { logging_meta: service_name }
+    }
+}
 
 impl Deserialize for CustomJsonEncoderDeserializer {
     type Trait = dyn Encode;
@@ -191,30 +185,35 @@ impl Deserialize for CustomJsonEncoderDeserializer {
         _: JsonEncoderConfig,
         _: &Deserializers,
     ) -> anyhow::Result<Box<dyn Encode>> {
-        Ok(Box::new(JsonEncoder::default()))
+        Ok(Box::new(JsonEncoder::new(self.logging_meta.clone())))
     }
 }
 
-pub fn init_logging(log_config_file: &str) {
+pub fn init_logging(config: &Settings) {
+    let log_file = match &config.log_file {
+        Some(a) => a.to_string(),
+        None => "log4rs.yml".to_string()
+    };
     let mut d: Deserializers = Default::default();
-    d.insert("json", CustomJsonEncoderDeserializer);
-    log4rs::init_file(log_config_file, d).unwrap();
+    d.insert("json", CustomJsonEncoderDeserializer::new(config.service.clone()));
+    log4rs::init_file(log_file, d).unwrap();
 }
 
 
 #[cfg(test)]
 mod test {
-    use chrono::{DateTime, Local};
+    use chrono::{DateTime, Utc};
     use log::{Level, Record};
     use log4rs::encode::writer::simple::SimpleWriter;
 
     use crate::proper_rust::flow_logger::JsonEncoder;
+    use crate::proper_rust::settings::LoggingMeta;
 
     #[test]
     fn default() {
         let time = DateTime::parse_from_rfc3339("2016-03-20T14:22:20.644420340-08:00")
             .unwrap()
-            .with_timezone(&Local);
+            .with_timezone(&Utc);
         let level = Level::Debug;
         let logger_name = "target";
         let module_path = "module_path";
@@ -225,7 +224,11 @@ mod test {
         let flow_id = "my-flow-id";
         log_mdc::insert("flow-id", flow_id);
 
-        let encoder = JsonEncoder::default();
+        let encoder = JsonEncoder::new(LoggingMeta {
+            build_time: "build".to_string(),
+            name: "name".to_string(),
+            version: "123".to_string(),
+        });
 
         let mut buf = vec![];
         encoder
@@ -246,7 +249,11 @@ mod test {
         let expected = format!(
             "{{\"time\":\"{}\",\"message\":\"{}\",\
              \"level\":\"{}\",\"logger_name\":\"{}\",\
-             \"thread\":\"{}\",\"thread_id\":{},\"flow-id\":\"{}\"}}",
+             \"thread\":\"{}\",\"thread_id\":{},\"flow-id\":\"{}\",\
+             \"app\":\"name\",\
+             \"version\":\"123\",\
+             \"build_time\":\"build\"\
+             }}",
             time.to_rfc3339(),
             message,
             level,

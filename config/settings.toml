@@ -13,6 +13,6 @@ port = 1234
 http-port = 8080
 
 [service]
-name = ""
-build-time = ""
+name = "rust-api"
 version = ""
+build_time = ""

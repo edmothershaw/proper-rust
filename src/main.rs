@@ -90,6 +90,7 @@ impl ErrorTagger for warp::Rejection {
     }
 }
 
+
 async fn chuck(pool: Pool, chuck_api: impl ChuckApiService, fc: FlowContext) -> Result<impl warp::Reply, warp::Rejection> {
     timed("chuck", || {
         async {
@@ -128,6 +129,18 @@ async fn write_chuck(pool: Pool, chuck: &Chuck) {
     let client = pool.get().await.unwrap();
     let stmt = client.prepare_cached("INSERT INTO rust_test.chuck(value) VALUES ($1)").await.unwrap();
     let _rows = client.query(&stmt, &[&chuck.value]).await.unwrap();
+}
+
+fn ping1() -> impl Filter<Extract=(String,), Error=warp::Rejection> + Clone {
+    warp::get()
+        .and(warp::path("ping"))
+        .map(|| format!("{{\"status\":\"OK\"}}"))
+}
+
+fn ping2() -> impl Filter<Extract=(String,), Error=warp::Rejection> + Clone {
+    warp::get()
+        .and(warp::path("ping"))
+        .map(|| format!("{{\"status\":\"OK\"}}"))
 }
 
 #[tokio::main]
@@ -176,9 +189,14 @@ async fn main() {
         .and(FlowContext::extract_flow_context())
         .and_then(chuck);
 
-    let routes = add_items.or(get_items).or(chuck);
 
-    proper_rust::start_server(routes).await;
+    let routes =
+        ping1().or(ping2())
+            .or(add_items)
+            .or(get_items)
+            .or(chuck);
+
+    proper_rust::start_server(_config, routes).await;
 }
 
 
